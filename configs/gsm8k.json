@@ -1,0 +1,12 @@
+{
+  "batch_size": 16,
+  "seq_len": 512,
+  "learning_rate": 0.003,
+  "weight_decay": 0.01,
+  "max_grad_norm": 1.0,
+  "denoising_loss_weight": 0.02,
+  "n_epochs": 3,
+  "target_chars": 100000000,
+  "checkpoint_path": "rdru_checkpoint.pth",
+  "log_interval": 1000
+}

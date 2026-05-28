@@ -1,0 +1,13 @@
+{
+  "vocab_size": 91,
+  "d_model": 256,
+  "n_query_heads": 8,
+  "n_kv_heads": 4,
+  "n_reasoning_steps": 8,
+  "n_experts": 4,
+  "top_k_experts": 2,
+  "d_ff_multiplier": 3,
+  "max_seq_len": 4096,
+  "denoising_noise_std": 0.05,
+  "weight_init_std": 0.02
+}
