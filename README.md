@@ -7,187 +7,208 @@
   <img src="https://img.shields.io/badge/QK_norm-✓-brightgreen" alt="QK Norm">
 </p>
 
-# RDRU — Recursive Denoising Reasoning Unit
+<h1 align="center">RDRU — Recursive Denoising Reasoning Unit</h1>
 
-A character-level language model that applies the **same transformer block
-iteratively**, paired with an **auxiliary denoising objective**. Designed for
-mathematical reasoning at small scales (~2.7M parameters).
-
-
-
-**Key ideas:**
-
-- **Recursive reasoning** — a single RRU block is applied 4–8 times per token,
-  allowing the hidden state to refine its representation iteratively.
-- **Denoising auxiliary loss** — MSE between the hidden state and a perturbed
-  version thereof encourages convergence toward a fixed point.
-- **Grouped Query Attention (GQA)** — 8 query heads, 4 key/value heads, with
-  Rotary Position Embeddings (RoPE).
-- **Sparse MoE-FFN** — 4 SwiGLU experts, top-2 routing, increasing capacity
-  without proportional compute.
+<p align="center">
+  A character-level language model that applies the <b>same transformer block iteratively</b>,
+  paired with an <b>auxiliary denoising objective</b>. Designed for mathematical reasoning
+  at small scales (~2.7M parameters).
+</p>
 
 ---
 
-## What's New (v2.1)
+## ✨ Key Ideas
+
+- **Recursive reasoning** — a single RRU block is applied 4–8 times per token, allowing the
+  hidden state to refine its representation iteratively, instead of stacking many distinct layers.
+- **Denoising auxiliary loss** — MSE between the hidden state and a perturbed version of itself
+  encourages convergence toward a stable fixed point.
+- **Grouped Query Attention (GQA)** — 8 query heads, 4 key/value heads, with Rotary Position
+  Embeddings (RoPE).
+- **Sparse MoE-FFN** — 4 SwiGLU experts, top-2 routing, increasing capacity without a
+  proportional increase in compute.
+
+---
+
+## 🆕 What's New (v2.1)
 
 | Improvement | Description | Benefit |
-|-------------|-------------|---------|
+|---|---|---|
 | **Weight Tying** | Embedding and output projection share weights | -23K params, better representations |
 | **QK-Norm** | LayerNorm on Q/K before attention (PaLM-style) | Stable training, no loss spikes |
-| **NTK-Aware RoPE** | Frequency scaling for longer sequences | Extrapolate beyond max_seq_len |
-| **Load Balancing MoE** | Auxiliary loss penalizes expert imbalance | No expert collapse |
-| **Gradient Checkpointing** | Trade compute for memory in RRU loop | ~8× less VRAM during training |
-| **AMP Support** | Automatic Mixed Precision (FP16/BF16) | ~2× speed on modern CPUs/GPUs |
-| **Gradient Accumulation** | Accumulate gradients over N steps | Large effective batch on limited RAM |
+| **NTK-Aware RoPE** | Frequency scaling for longer sequences | Extrapolates beyond `max_seq_len` |
+| **Load-Balancing MoE** | Auxiliary loss penalizes expert imbalance | Prevents expert collapse |
+| **Gradient Checkpointing** | Trades compute for memory in the RRU loop | ~8× less VRAM during training |
+| **AMP Support** | Automatic Mixed Precision (FP16/BF16) | ~2× faster on modern CPUs/GPUs |
+| **Gradient Accumulation** | Accumulates gradients over N steps | Large effective batch on limited RAM |
 | **EMA** | Exponential Moving Average of weights | Better generalization at inference |
-| **Curriculum Learning** | Progressive reasoning depth | Starts with 1 step, grows gradually |
-| **Top-p / Repetition Penalty** | Nucleus sampling + repeat penalty | Higher quality generations |
-| **KV-Cache Ready** | Structure for cached generation | O(T) vs O(T²) generation |
-| **Temperature=0 Safe** | Argmax fallback instead of div-by-zero | No more crashes at temp=0 |
+| **Curriculum Learning** | Progressive reasoning depth | Starts at 1 step, grows gradually |
+| **Top-p / Repetition Penalty** | Nucleus sampling + repeat penalty | Higher-quality generations |
+| **KV-Cache Ready** | Structure prepared for cached generation | O(T) instead of O(T²) generation |
+| **Temperature = 0 Safe** | Argmax fallback instead of division by zero | No more crashes at `temp=0` |
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 | Component | Description | Reference |
-|-----------|-------------|-----------|
-| \ | Rotation-based relative position encoding | [RoFormer](https://arxiv.org/abs/2104.09864) |
-| \ | Grouped Query Attention (8 Q-heads, 4 KV-heads) | [GQA](https://arxiv.org/abs/2305.13245) |
-| \ | Sparse Mixture-of-Experts (4 experts, top-2) | [MoE](https://arxiv.org/abs/1701.06538) |
-| \ | Gated feed-forward activation | [GLU Variants](https://arxiv.org/abs/2002.05202) |
-| \ | Single shared transformer block (applied iteratively) | — |
-| \ | Top-level model: embedding + RRU loop + denoising | — |
+|---|---|---|
+| `RotaryEmbedding` | Rotation-based relative position encoding | [RoFormer](https://arxiv.org/abs/2104.09864) |
+| `GroupedQueryAttention` | Grouped Query Attention (8 Q-heads, 4 KV-heads) | [GQA](https://arxiv.org/abs/2305.13245) |
+| `MoEFeedForward` | Sparse Mixture-of-Experts (4 experts, top-2) | [MoE](https://arxiv.org/abs/1701.06538) |
+| `SwiGLU` | Gated feed-forward activation | [GLU Variants](https://arxiv.org/abs/2002.05202) |
+| `RRUBlock` | Single shared transformer block, applied iteratively | — |
+| `RDRUModel` | Top-level model: embedding + RRU loop + denoising head | — |
 
 ### Parameter count (default config)
 
 | Component | Parameters |
-|-----------|-----------|
+|---|---|
 | Token embedding | 23,296 |
 | Attention (QKV + output) | 139,264 |
 | MoE-FFN (4 SwiGLU experts) | 1,575,424 |
 | Layer norms & projections | 1,005,149 |
-| **Total** | **~2,735,616** |
+| **Total** | **≈ 2,735,616** |
 
 ---
 
-## Installation
+## 📦 Installation
 
-\Requirement already satisfied: torch>=2.0.0 in /usr/local/lib/python3.13/site-packages (from -r requirements.txt (line 1)) (2.12.1+cpu)
-Requirement already satisfied: datasets>=2.14.0 in /usr/local/lib/python3.13/site-packages (from -r requirements.txt (line 2)) (5.0.0)
-Requirement already satisfied: filelock in /usr/local/lib/python3.13/site-packages (from torch>=2.0.0->-r requirements.txt (line 1)) (3.29.0)
-Requirement already satisfied: typing-extensions>=4.10.0 in /usr/local/lib/python3.13/site-packages (from torch>=2.0.0->-r requirements.txt (line 1)) (4.15.0)
-Requirement already satisfied: setuptools<82 in /usr/local/lib/python3.13/site-packages (from torch>=2.0.0->-r requirements.txt (line 1)) (70.2.0)
-Requirement already satisfied: sympy>=1.13.3 in /usr/local/lib/python3.13/site-packages (from torch>=2.0.0->-r requirements.txt (line 1)) (1.14.0)
-Requirement already satisfied: networkx>=2.5.1 in /usr/local/lib/python3.13/site-packages (from torch>=2.0.0->-r requirements.txt (line 1)) (3.6.1)
-Requirement already satisfied: jinja2 in /usr/local/lib/python3.13/site-packages (from torch>=2.0.0->-r requirements.txt (line 1)) (3.1.6)
-Requirement already satisfied: fsspec>=0.8.5 in /usr/local/lib/python3.13/site-packages (from torch>=2.0.0->-r requirements.txt (line 1)) (2026.4.0)
-Requirement already satisfied: numpy>=1.17 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (2.3.5)
-Requirement already satisfied: pyarrow>=21.0.0 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (24.0.0)
-Requirement already satisfied: dill<0.4.2,>=0.3.0 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (0.4.1)
-Requirement already satisfied: pandas in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (2.2.3)
-Requirement already satisfied: requests>=2.32.2 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (2.33.0)
-Requirement already satisfied: httpx<1.0.0 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (0.28.1)
-Requirement already satisfied: tqdm>=4.66.3 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (4.68.3)
-Requirement already satisfied: xxhash in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (3.8.0)
-Requirement already satisfied: multiprocess<0.70.20 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (0.70.19)
-Requirement already satisfied: huggingface-hub<2.0,>=0.25.0 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (1.22.0)
-Requirement already satisfied: packaging in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (26.2)
-Requirement already satisfied: pyyaml>=5.1 in /usr/local/lib/python3.13/site-packages (from datasets>=2.14.0->-r requirements.txt (line 2)) (6.0.3)
-Requirement already satisfied: aiohttp!=4.0.0a0,!=4.0.0a1 in /usr/local/lib/python3.13/site-packages (from fsspec[http]<=2026.4.0,>=2023.1.0->datasets>=2.14.0->-r requirements.txt (line 2)) (3.14.1)
-Requirement already satisfied: anyio in /usr/local/lib/python3.13/site-packages (from httpx<1.0.0->datasets>=2.14.0->-r requirements.txt (line 2)) (4.14.0)
-Requirement already satisfied: certifi in /usr/local/lib/python3.13/site-packages (from httpx<1.0.0->datasets>=2.14.0->-r requirements.txt (line 2)) (2026.6.17)
-Requirement already satisfied: httpcore==1.* in /usr/local/lib/python3.13/site-packages (from httpx<1.0.0->datasets>=2.14.0->-r requirements.txt (line 2)) (1.0.9)
-Requirement already satisfied: idna in /usr/local/lib/python3.13/site-packages (from httpx<1.0.0->datasets>=2.14.0->-r requirements.txt (line 2)) (3.18)
-Requirement already satisfied: h11>=0.16 in /usr/local/lib/python3.13/site-packages (from httpcore==1.*->httpx<1.0.0->datasets>=2.14.0->-r requirements.txt (line 2)) (0.16.0)
-Requirement already satisfied: click<9.0.0,>=8.4.2 in /usr/local/lib/python3.13/site-packages (from huggingface-hub<2.0,>=0.25.0->datasets>=2.14.0->-r requirements.txt (line 2)) (8.4.2)
-Requirement already satisfied: hf-xet<2.0.0,>=1.5.1 in /usr/local/lib/python3.13/site-packages (from huggingface-hub<2.0,>=0.25.0->datasets>=2.14.0->-r requirements.txt (line 2)) (1.5.1)
-Requirement already satisfied: aiohappyeyeballs>=2.5.0 in /usr/local/lib/python3.13/site-packages (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.4.0,>=2023.1.0->datasets>=2.14.0->-r requirements.txt (line 2)) (2.6.2)
-Requirement already satisfied: aiosignal>=1.4.0 in /usr/local/lib/python3.13/site-packages (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.4.0,>=2023.1.0->datasets>=2.14.0->-r requirements.txt (line 2)) (1.4.0)
-Requirement already satisfied: attrs>=17.3.0 in /usr/local/lib/python3.13/site-packages (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.4.0,>=2023.1.0->datasets>=2.14.0->-r requirements.txt (line 2)) (26.1.0)
-Requirement already satisfied: frozenlist>=1.1.1 in /usr/local/lib/python3.13/site-packages (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.4.0,>=2023.1.0->datasets>=2.14.0->-r requirements.txt (line 2)) (1.8.0)
-Requirement already satisfied: multidict<7.0,>=4.5 in /usr/local/lib/python3.13/site-packages (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.4.0,>=2023.1.0->datasets>=2.14.0->-r requirements.txt (line 2)) (6.7.1)
-Requirement already satisfied: propcache>=0.2.0 in /usr/local/lib/python3.13/site-packages (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.4.0,>=2023.1.0->datasets>=2.14.0->-r requirements.txt (line 2)) (0.5.2)
-Requirement already satisfied: yarl<2.0,>=1.17.0 in /usr/local/lib/python3.13/site-packages (from aiohttp!=4.0.0a0,!=4.0.0a1->fsspec[http]<=2026.4.0,>=2023.1.0->datasets>=2.14.0->-r requirements.txt (line 2)) (1.24.2)
-Requirement already satisfied: charset_normalizer<4,>=2 in /usr/local/lib/python3.13/site-packages (from requests>=2.32.2->datasets>=2.14.0->-r requirements.txt (line 2)) (3.4.7)
-Requirement already satisfied: urllib3<3,>=1.26 in /usr/local/lib/python3.13/site-packages (from requests>=2.32.2->datasets>=2.14.0->-r requirements.txt (line 2)) (2.7.0)
-Requirement already satisfied: mpmath<1.4,>=1.1.0 in /usr/local/lib/python3.13/site-packages (from sympy>=1.13.3->torch>=2.0.0->-r requirements.txt (line 1)) (1.3.0)
-Requirement already satisfied: MarkupSafe>=2.0 in /usr/local/lib/python3.13/site-packages (from jinja2->torch>=2.0.0->-r requirements.txt (line 1)) (3.0.3)
-Requirement already satisfied: python-dateutil>=2.8.2 in /usr/local/lib/python3.13/site-packages (from pandas->datasets>=2.14.0->-r requirements.txt (line 2)) (2.9.0.post0)
-Requirement already satisfied: pytz>=2020.1 in /usr/local/lib/python3.13/site-packages (from pandas->datasets>=2.14.0->-r requirements.txt (line 2)) (2025.2)
-Requirement already satisfied: tzdata>=2022.7 in /usr/local/lib/python3.13/site-packages (from pandas->datasets>=2.14.0->-r requirements.txt (line 2)) (2026.2)
-Requirement already satisfied: six>=1.5 in /usr/local/lib/python3.13/site-packages (from python-dateutil>=2.8.2->pandas->datasets>=2.14.0->-r requirements.txt (line 2)) (1.17.0)
+```bash
+git clone https://github.com/<your-user>/rdru.git
+cd rdru
+pip install -r requirements.txt
+```
+
+**Requirements:** Python 3.10+, PyTorch 2.0+, 🤗 `datasets` 2.14+.
+
 ---
 
-## Usage
+## 🚀 Usage
 
 ### Training on GSM8K
 
-\
+```bash
+python train.py \
+  --config configs/base.json \
+  --dataset gsm8k \
+  --output_dir checkpoints/base
+```
+
 ### Configurations
 
-| Config | Params | d_model | Experts | Steps | RAM | Time/epoch (CPU) |
-|--------|--------|---------|---------|-------|-----|-------------------|
-| \ | ~7K | 64 | 2 | 4 | ~256 MB | ~2 min |
-| \ | ~176K | 128 | 4 | 6 | ~512 MB | ~15 min |
-| \ | ~2.7M | 256 | 4 | 8 | ~1.5 GB | ~45 min |
+| Config | Params | d_model | Experts | RRU steps | RAM | Time/epoch (CPU) |
+|---|---|---|---|---|---|---|
+| `configs/tiny.json` | ~7K | 64 | 2 | 4 | ~256 MB | ~2 min |
+| `configs/small.json` | ~176K | 128 | 4 | 6 | ~512 MB | ~15 min |
+| `configs/base.json` | ~2.7M | 256 | 4 | 8 | ~1.5 GB | ~45 min |
 
 ### Generation
 
-\
+```bash
+python generate.py \
+  --checkpoint checkpoints/base/best.pt \
+  --prompt "Janet has 3 apples. She buys 5 more. How many apples does she have?" \
+  --max_new_tokens 200 \
+  --top_p 0.9 \
+  --repetition_penalty 1.2
+```
+
 ### Evaluation
 
-\
+```bash
+python evaluate.py \
+  --checkpoint checkpoints/base/best.pt \
+  --dataset gsm8k \
+  --split test
+```
+
 ### Running tests
 
-\Requirement already satisfied: pytest in /usr/local/lib/python3.13/site-packages (9.0.3)
-Requirement already satisfied: iniconfig>=1.0.1 in /usr/local/lib/python3.13/site-packages (from pytest) (2.3.0)
-Requirement already satisfied: packaging>=22 in /usr/local/lib/python3.13/site-packages (from pytest) (26.2)
-Requirement already satisfied: pluggy<2,>=1.5 in /usr/local/lib/python3.13/site-packages (from pytest) (1.6.0)
-Requirement already satisfied: pygments>=2.7.2 in /usr/local/lib/python3.13/site-packages (from pytest) (2.20.0)
-============================= test session starts ==============================
-platform linux -- Python 3.13.13, pytest-9.0.3, pluggy-1.6.0
-rootdir: /home/user
-plugins: anyio-4.14.0
-collected 0 items
+```bash
+pytest tests/ -v
+```
 
-============================ no tests ran in 0.01s =============================
 ---
 
-## Configuration
+## ⚙️ Configuration
 
-Model and training hyperparameters are defined as \ objects and
-serialised to JSON, following the same pattern as
+Model and training hyperparameters are defined as `RDRUConfig` objects and
+serialized to JSON, following the same pattern as
 [DeepSeek-V3](https://github.com/deepseek-ai/DeepSeek-V3).
 
-\
-Pre-built configs are in [\](configs/):
+```python
+from rdru.config import RDRUConfig
+
+config = RDRUConfig(
+    vocab_size=128,
+    d_model=256,
+    n_heads=8,
+    n_kv_heads=4,
+    n_experts=4,
+    top_k=2,
+    n_recursions=8,
+    max_seq_len=512,
+)
+config.save("configs/base.json")
+```
+
+Pre-built configs live in [`configs/`](configs/):
 
 | Config | Description |
-|--------|-------------|
-| \ | Ultra-light (~7K params), runs on any machine |
-| \ | Lightweight (~176K params), fast training |
-| \ | Default (~2.7M params), best quality |
+|---|---|
+| `tiny.json` | Ultra-light (~7K params), runs on any machine |
+| `small.json` | Lightweight (~176K params), fast training |
+| `base.json` | Default (~2.7M params), best quality |
 
 ---
 
-## Training curves
+## 📈 Training Curves
 
-Training on the GSM8K corpus (~4M characters of real math reasoning +
-synthetic arithmetic problems to reach 100M characters):
+Trained on the GSM8K corpus (~4M characters of real math reasoning, augmented
+with synthetic arithmetic problems up to 100M characters):
 
-\
+![Training curves](assets/training_curves.png)
+
 ---
 
-## Project structure
+## 📁 Project Structure
 
-\
+```
+rdru/
+├── configs/
+│   ├── tiny.json
+│   ├── small.json
+│   └── base.json
+├── rdru/
+│   ├── __init__.py
+│   ├── config.py
+│   ├── model.py
+│   ├── layers.py
+│   └── tokenizer.py
+├── scripts/
+│   ├── train.py
+│   ├── generate.py
+│   └── evaluate.py
+├── tests/
+│   └── test_model.py
+├── requirements.txt
+├── LICENSE
+└── README.md
+```
+
 ---
 
-## References
+## 📚 References
 
-\
+- Su et al., 2021 — [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)
+- Ainslie et al., 2023 — [GQA: Training Generalized Multi-Query Transformer Models](https://arxiv.org/abs/2305.13245)
+- Shazeer et al., 2017 — [Outrageously Large Neural Networks: The Sparsely-Gated MoE Layer](https://arxiv.org/abs/1701.06538)
+- Shazeer, 2020 — [GLU Variants Improve Transformer](https://arxiv.org/abs/2002.05202)
+- Chowdhery et al., 2022 — [PaLM: Scaling Language Modeling with Pathways](https://arxiv.org/abs/2204.02311) (QK-Norm)
+
 ---
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License — see [\](LICENSE).
+This project is licensed under the MIT License — see [LICENSE](LICENSE) for details.
