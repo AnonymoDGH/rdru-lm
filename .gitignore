@@ -1,21 +1,33 @@
-# Byte-compiled
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 dist/
 build/
+.eggs/
 
 # Checkpoints
+nyx_runs/
+backup_original/
 *.pth
+
+# Environment
+.venv/
+venv/
+env/
+.conda/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Environment
-.venv/
-venv/
+# Logs
+*.log
+*.out

@@ -1,153 +1,81 @@
-"""Data loading and corpus construction utilities."""
-
+"""Data loading utilities for RDRU-Nyx."""
 from __future__ import annotations
-
 import logging
 import random
-from typing import List, Optional
-
+from typing import Dict, List, Optional
 import torch
 from torch.utils.data import Dataset
 
 logger = logging.getLogger(__name__)
 
-
 class CharDataset(Dataset):
-    """Character-level language modelling dataset.
-
-    Maps a raw text corpus to fixed-length sequences for next-token prediction.
-    The vocabulary is built from the set of characters appearing in the text.
-
-    Each sample is a tuple ``(input_ids, target_ids)`` where ``target_ids``
-    is ``input_ids`` shifted right by one position.
-    """
-
-    def __init__(self, text: str, seq_len: int):
+    def __init__(self, text: str, seq_len: int, stoi: Optional[Dict[str, int]] = None):
         super().__init__()
         self.seq_len = seq_len
-
-        chars = sorted(set(text))
-        self.stoi: dict[str, int] = {c: i for i, c in enumerate(chars)}
-        self.itos: dict[int, str] = {i: c for c, i in self.stoi.items()}
-        self.vocab_size: int = len(chars)
-
-        data = [self.stoi[c] for c in text]
+        if stoi is None:
+            chars = sorted(set(text))
+            self.stoi = {c: i for i, c in enumerate(chars)}
+            self.itos = {i: c for c, i in self.stoi.items()}
+            self.vocab_size = len(chars)
+        else:
+            self.stoi = stoi
+            self.itos = {i: c for c, i in stoi.items()}
+            self.vocab_size = len(stoi)
+        data = [self.stoi.get(c, 0) for c in text]
         self.data = torch.tensor(data, dtype=torch.long)
-        self.n_chunks = (len(self.data) - 1) // seq_len
-
-        logger.info(
-            "vocab=%d chars, tokens=%d, chunks=%d",
-            self.vocab_size,
-            len(self.data),
-            self.n_chunks,
-        )
-
-    def __len__(self) -> int:
-        return self.n_chunks
-
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+        self.n_chunks = max(0, (len(self.data) - 1) // seq_len)
+        logger.info(f"vocab={self.vocab_size} tokens={len(self.data):,} chunks={self.n_chunks:,}")
+    def __len__(self): return self.n_chunks
+    def __getitem__(self, idx):
         start = idx * self.seq_len
-        x = self.data[start : start + self.seq_len]
-        y = self.data[start + 1 : start + self.seq_len + 1]
-        return x, y
-
+        return (self.data[start: start + self.seq_len],
+                self.data[start + 1: start + self.seq_len + 1])
 
 def build_gsm8k_corpus(target_chars: int = 50_000_000) -> str:
-    """Build a text corpus from the GSM8K math reasoning dataset.
-
-    Each sample is formatted as::
-
-        q: <question>
-        a: <chain-of-thought answer>
-
-    Args:
-        target_chars: Maximum number of characters to include.
-
-    Returns:
-        Full corpus as a single string.
-    """
-    from datasets import load_dataset
-
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        logger.error("datasets not installed"); return ""
     ds = load_dataset("openai/gsm8k", "main", split="train", streaming=True)
-    samples: List[str] = []
-    total = 0
-
-    for example in ds:
-        text = f"q: {example['question'].lower()}\na: {example['answer'].lower()}"
-        samples.append(text)
-        total += len(text) + 1
-        if total >= target_chars:
-            break
-
+    samples, total = [], 0
+    for ex in ds:
+        text = f"q: {ex['question'].lower()}\na: {ex['answer'].lower()}"
+        samples.append(text); total += len(text) + 1
+        if total >= target_chars: break
     corpus = "\n".join(samples)
-    logger.info("gsm8k: %d samples, %d chars", len(samples), len(corpus))
+    logger.info(f"GSM8K: {len(samples)} samples, {len(corpus):,} chars")
     return corpus
 
-
-def build_large_corpus(target_chars: int = 1_000_000_000) -> str:
-    """Build a large corpus from GSM8K and synthetic arithmetic problems.
-
-    After exhausting GSM8K (train + test splits), the remaining capacity is
-    filled with procedurally-generated arithmetic word problems. This is
-    intended for fast bootstrapping; production use should replace synthetic
-    data with diverse sources (MetaMathQA, NuminaMath, code corpora, etc.).
-
-    Args:
-        target_chars: Target corpus size in characters.
-
-    Returns:
-        Full corpus as a single string.
-    """
-    from datasets import load_dataset
-
-    blocks: List[str] = []
-    total = 0
-
+def build_large_corpus(target_chars: int = 100_000_000) -> str:
+    try:
+        from datasets import load_dataset
+    except ImportError:
+        return _generate_synthetic(target_chars)
+    blocks, total = [], 0
     for split in ("train", "test"):
-        for example in load_dataset("openai/gsm8k", "main", split=split, streaming=True):
-            text = f"q: {example['question'].lower()}\na: {example['answer'].lower()}"
-            blocks.append(text)
-            total += len(text) + 1
+        try:
+            for ex in load_dataset("openai/gsm8k", "main", split=split, streaming=True):
+                text = f"q: {ex['question'].lower()}\na: {ex['answer'].lower()}"
+                blocks.append(text); total += len(text) + 1
+        except: pass
+    if total < target_chars:
+        blocks.append(_generate_synthetic(target_chars - total))
+    corpus = "".join(blocks)
+    return corpus[:target_chars]
 
-    gsm_block = "\n".join(blocks) + "\n"
-    logger.info("gsm8k: %d chars", len(gsm_block))
-
-    operators = ("+", "-", "*")
-    op_names = {"+": "plus", "-": "minus", "*": "times"}
-    batch_num = 0
-
+def _generate_synthetic(target_chars: int) -> str:
+    ops = ("+", "-", "*"); opn = {"+": "plus", "-": "minus", "*": "times"}
+    samples, total = [], 0
     while total < target_chars:
-        if total + len(gsm_block) <= target_chars:
-            blocks.append(gsm_block)
-            total += len(gsm_block)
-        else:
-            blocks.append(gsm_block[: target_chars - total])
-            total = target_chars
-            break
+        a, b = random.randint(1, 99), random.randint(1, 99)
+        op = random.choice(ops)
+        r = {"+": a + b, "-": a - b, "*": a * b}[op]
+        t = [f"q: what is {a} {op} {b}", f"q: calculate {a} {op} {b}",
+             f"q: solve: {a} {op} {b}", f"q: {a} {op} {b} eq"]
+        text = f"{random.choice(t)}\na: {a} {opn[op]} {b} is {r}. #### {r}"
+        samples.append(text); total += len(text) + 1
+    logger.info(f"Synthetic: {len(samples):,} samples, {total:,} chars")
+    return "\n".join(samples)
 
-        batch = []
-        for _ in range(100_000):
-            a = random.randint(1, 99)
-            b = random.randint(1, 99)
-            op = random.choice(operators)
-            result = {"+": a + b, "-": a - b, "*": a * b}[op]
-            batch.append(
-                f"q: what is {a} {op} {b}\n"
-                f"a: {a} {op_names[op]} {b} is {result}. #### {result}"
-            )
-
-        block = "\n".join(batch) + "\n"
-        remaining = target_chars - total
-        blocks.append(block[:remaining])
-        total += min(len(block), remaining)
-        batch_num += 1
-
-        if batch_num % 5 == 0:
-            logger.info("synthetic batch %d: %d / %d chars", batch_num, total, target_chars)
-
-    return "".join(blocks)
-
-
-def decode(ids: torch.Tensor, itos: dict[int, str]) -> str:
-    """Convert a token ID tensor back to a string."""
-    return "".join(itos[i.item()] for i in ids)
+def decode(ids, itos, default="�"):
+    return "".join(itos.get(i.item(), default) for i in ids)

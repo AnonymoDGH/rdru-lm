@@ -1,0 +1,21 @@
+{
+  "vocab_size": 91,
+  "d_model": 64,
+  "n_query_heads": 4,
+  "n_kv_heads": 2,
+  "n_reasoning_steps": 4,
+  "n_experts": 2,
+  "top_k_experts": 1,
+  "d_ff_multiplier": 3,
+  "max_seq_len": 1024,
+  "denoising_noise_std": 0.1,
+  "weight_init_std": 0.02,
+  "use_weight_tying": true,
+  "use_act": false,
+  "use_load_balancing": true,
+  "load_balancing_coef": 0.01,
+  "use_gradient_checkpointing": true,
+  "use_qk_norm": true,
+  "rope_ntk_alpha": 1.0,
+  "n_think_tokens": 0
+}
